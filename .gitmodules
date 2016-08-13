@@ -1,0 +1,6 @@
+[submodule "deps/gfakluge"]
+	path = deps/gfakluge
+	url = https://github.com/edawson/gfakluge.git
+[submodule "deps/vcflib"]
+	path = deps/vcflib
+	url = https://github.com/vcflib/vcflib
