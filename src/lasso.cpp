@@ -148,16 +148,20 @@ int main(int argc, char** argv){
         for (int i = 0; i < len; i++){
             Node* n = new Node();
             n->sequence = seq[i];
-            n->id = i;
+            n->id = i + 1;
             n->path = name;
             cont_nodes[name].push_back(n);
         }
     }
 
     for (auto x : cont_nodes){
-        for (int i = 1; i < x.second.size() - 1; i++){
-            x.second[i]->prev.push_back( x.second[i-1] );
-            x.second[i]->next.push_back( x.second[i+1] );
+        for (int i = 0; i < x.second.size(); i++){
+            if (i >= 1){
+                x.second[i]->prev.push_back( x.second[i-1] );
+            }
+            if (i < x.second.size() - 1){
+                x.second[i]->next.push_back( x.second[i+1] );
+            }
         }
     }
 
@@ -206,7 +210,7 @@ int main(int argc, char** argv){
                 if (svtype == "DEL"){
                     if (var.info.find("SVLEN") != var.info.end()){
                         Node * start = con[ var.pos - 1 ];
-                        Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz) - 1 ];
+                        Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz)  ];
                         #pragma omp critical
                         cerr << "Creating edge between " << start->id << " and " << end->id << endl;
 
@@ -272,32 +276,42 @@ int main(int argc, char** argv){
         //       merged_node = node
         //       ret.push_back(merged_node);
         vector<Node*> ret;
-        Node* merged = contig[0];
+        //Node* merged = memcpy(contig[0];
+        Node* merged = new Node();
+        merged->sequence = contig[0]->sequence;
+        merged->path = contig[0]->path;
+        merged->id = contig[0]->id;
+        merged->next = contig[0]->next;
+        ret.push_back(merged);
+        //cerr << contig[0]->next.size();
         for (int i = 1; i < contig.size(); i++){
-            merged = contig[ i - 1 ];
             Node* curr = contig[ i ];
+            merged = ret[ ret.size () - 1 ];
 
-            if (merged->next.size() == 1 && curr->prev.size() == 1 &&
-                merged->id == curr->id - 1){
+            if ( merged->next.size() == 1 && curr->prev.size() == 1 &&
+                merged->path == curr->path){
                 merged->sequence += curr->sequence;
                 merged->next = curr->next;
-                merged->id = curr->id;
-                ret.push_back(merged);
-                delete curr;
+                //merged->id = curr->id;
+                //delete curr;
             }
             else{
-                merged = curr;
-                ret.push_back(merged);
+                //merged = curr;
+                //ret.push_back(merged);
+                ret.push_back(curr);
             }
         }
             return ret;
     };
 
     for (auto conti : cont_nodes){
+        //vector<Node*> orig = conti.second;
         cont_nodes [ conti.first ] = compact(conti.second);
+
     }
 
     GFAKluge og;
+    og.set_version();
     for (auto conti : cont_nodes){
         string c_name = conti.first;
         vector<Node*> c_nodes = conti.second;
@@ -308,6 +322,7 @@ int main(int argc, char** argv){
             seq_el.name = std::to_string(n->id);
             og.add_sequence(seq_el);
 
+            //cerr << n->next.size() << endl;
             for (int next_ind = 0; next_ind < n->next.size(); next_ind++){
                 link_elem link_el;
                 link_el.source_name = std::to_string(n->id);
@@ -324,9 +339,11 @@ int main(int argc, char** argv){
                 path_elem p_elem;
                 p_elem.name = n->path;
                 p_elem.source_name = std::to_string(n->id);
-                p_elem.rank = i;
+                p_elem.rank = i + 1;
                 p_elem.is_reverse = false;
-                p_elem.cigar = "1M";
+                stringstream p_cig;
+                p_cig << n->sequence.length() << "M";
+                p_elem.cigar = p_cig.str();
 
                 og.add_path(p_elem.source_name, p_elem);
             }
@@ -335,7 +352,7 @@ int main(int argc, char** argv){
 
     }
 
-    cout << og << endl;
+    cout << og;
 
 
 
