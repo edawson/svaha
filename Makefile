@@ -12,7 +12,7 @@ else
 endif
 
 LD_INC_FLAGS:= -I./include 
-LD_LIB_FLAGS:= -L./lib -lgfakluge -lvcflib -lz -lhts #-lrodeo
+LD_LIB_FLAGS:= -L./lib -lgfakluge  -lz -lhts #-lrodeo
 
 
 SRC_DIR:=src
@@ -23,16 +23,16 @@ INC_DIR:=include
 EXE:=lasso
 
 #$(EXE): $(SRC_DIR)/lasso.cpp $(LIB_DIR)/librodeo.a $(OBJ_DIR)/wrangler.o $(SRC_DIR)/vcfparse.hpp .pre-build
-$(EXE): $(SRC_DIR)/lasso.cpp $(SRC_DIR)/vcfparse.hpp $(LIB_DIR)/libhts.a $(LIB_DIR)/libvcflib.a $(LIB_DIR)/libgfakluge.a .pre-build
+$(EXE): $(SRC_DIR)/lasso.cpp $(SRC_DIR)/vcfparse.hpp $(LIB_DIR)/libhts.a $(LIB_DIR)/libgfakluge.a .pre-build
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LD_LIB_FLAGS) $(LD_INC_FLAGS)
 
-$(LIB_DIR)/libhts.a:
+$(LIB_DIR)/libhts.a: .pre-build
 	+cd deps/htslib && $(MAKE) && cp libhts.a ../../lib/
 
-$(LIB_DIR)/libvcflib.a: $(LIB_DIR)/libhts.a
+$(LIB_DIR)/libvcflib.a: $(LIB_DIR)/libhts.a .pre-build
 	+cd deps/vcflib && $(MAKE) && cp include/* ../../include/ && cp src/*.hpp ../../include/ && cp libvcflib.a ../../lib/
 
-$(LIB_DIR)/libgfakluge.a:
+$(LIB_DIR)/libgfakluge.a: .pre-build
 	+cd deps/gfakluge && $(MAKE) && cp gfakluge.hpp ../../include && cp libgfakluge.a ../../lib/
 
 #$(LIB_DIR)/librodeo.a: $(OBJ_DIR)/rodeo.o $(OBJ_DIR)/wrangler.o .pre-build

@@ -10,7 +10,7 @@
 #include "wrangler.hpp"
 #include "kseq.hpp"
 #include "gfakluge.hpp"
-#include "Variant.h"
+//#include "Variant.h"
 #include "vcfparse.hpp"
 #include <map>
 
@@ -49,6 +49,7 @@ struct Node{
     vector<Node*> prev;
 };
 
+/**
 void parse_variants(vector<string>& v_files,
         vector<vcflib::Variant>& variants){
     for (auto v : v_files){
@@ -65,13 +66,16 @@ void parse_variants(vector<string>& v_files,
     }
 }
 
+
+
 void make_graph(vector<vcflib::Variant>& vars,
         map<string, char*>& seqs,
         map<string, int>& lengths){
 
 }
-
+*/
 }
+
 
 int main(int argc, char** argv){
     vector<char*> ref_files;
