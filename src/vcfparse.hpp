@@ -52,6 +52,8 @@ namespace vcfparse{
         int qual;
         vector<string> filter;
         map<string, string> info;
+        vector<string> format;
+        vector<vector<string> > samples;
     };
 
     inline Variant parse_line(string line){
@@ -69,11 +71,21 @@ namespace vcfparse{
         }
         
         // Filter field
-        string filter = t_splits[8];
+        string filter = t_splits[6];
+        for (auto i : split(filter, ',')){
+            ret.filter.push_back(i);
+        }
         // INFO Field - gets crazy here. Lots of ';' delimited values.
-        string info_str = t_splits[9];
-        // info_splits = split(info, ';');
+        string info_str = t_splits[7];
+        
+        vector<string> info_splits = split(info_str, ';');
 
+        for (auto s : info_splits){
+            vector<string> key_and_val = split(s, '=');
+            ret.info[key_and_val[0]] = key_and_val[1];
+        }
+
+        
         // Format field.
 
         // Sample specific ludicrous field(s)

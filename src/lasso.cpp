@@ -1,4 +1,5 @@
 #include <iostream>
+#include <functional>
 #include <getopt.h>
 #include <vector>
 #include <unordered_map>
@@ -17,7 +18,7 @@
 using namespace std;
 using namespace gfak;
 using namespace rodeo;
-
+namespace rodeo{
 KSEQ_INIT(gzFile, gzread)
 
     void parse_fastas(vector<char*>& refs,
@@ -38,6 +39,14 @@ KSEQ_INIT(gzFile, gzread)
             gzclose(fp);
         }
     }
+
+struct Node{
+    int id; // Must be unique within a contig given how we're going to
+    // abuse the id fields later.
+    std::string sequence;
+    vector<Node*> next;
+    vector<Node*> prev;
+};
 
 void parse_variants(vector<string>& v_files,
         vector<vcflib::Variant>& variants){
@@ -61,6 +70,7 @@ void make_graph(vector<vcflib::Variant>& vars,
 
 }
 
+}
 
 int main(int argc, char** argv){
     vector<char*> ref_files;
@@ -127,18 +137,31 @@ int main(int argc, char** argv){
     //    cerr << var << endl;
     //}
 
+//    map<string, map<int, Node*> > pos_to_node;
     map<string, vector<Node*> > cont_nodes;
-    map<string, vector<Edge*> > cont_edges;
     map<string, char*>::iterator it;
     for (it = name_to_seq.begin(); it != name_to_seq.end(); it++){
         string name = it->first;
         char* seq = it->second;
         int len = name_to_length[name];
         for (int i = 0; i < len; i++){
-//            Node* n = new Node();
+            Node* n = new Node();
+            n->sequence = seq[i];
+            n->id = i;
+            cont_nodes[name].push_back(n);
         }
     }
 
+    for (auto x : cont_nodes){
+        for (int i = 1; i < x.second.size() - 1; i++){
+            x.second[i]->prev.push_back( x.second[i-1] );
+            x.second[i]->next.push_back( x.second[i+1] );
+        }
+    }
+
+    cerr << cont_nodes.size() << " Contigs parsed and turned into nodes." << endl;
+
+    vector<vcfparse::Variant> variants;
     vcfparse::Variant var;
 
     std::ifstream infile(var_files[0]);
@@ -146,12 +169,94 @@ int main(int argc, char** argv){
     while (std::getline(infile, line))
     {   
         if (line[0] != '#'){
-            var = vcfparse::parse_line(line);
-            //cout << vcfparse::to_string(var);
+            variants.push_back(vcfparse::parse_line(line));
         }
     }
-    Wrangler wrg;
 
+    /**
+     * At this point we have a pseudo graph of Nodes,
+     * one per base in the sequence.
+     *
+     * We also have a vector of VCF entries in a simple string format.
+     *
+     * Now, we need to loop over those variants.
+     * We'll switch on SVTYPE, and for DEL / INV / (DUP??)
+     * we will pull out the end and then length. We can check these against the
+     * confidence intervals if needed.
+     * *** WE WILL ALSO NEED THE POSITION FROM THE VCF RECORD ***
+     * Then, if we have a deletion, we simply insert node (start + len) into
+     * the next member of node start.
+     *
+     * if we have an inversion, we insert node (start + len - 1) into the NEXT member
+     * if start AND we insrt node ( start + 1 ) into the PREV member of node ( start + len ).
+     *
+     */
+    #pragma omp parallel for
+    for (int i = 0; i < variants.size(); i++){
+       vcfparse::Variant var = variants[i];
+       string contig = var.seq;
+       int pos = var.pos;
+       if (cont_nodes.find(contig) != cont_nodes.end()){
+           vector<Node*> con = cont_nodes[contig];
+           if (pos < con.size()){
+                string svtype = var.info["SVTYPE"];
+                std::string::size_type sz;
+                if (svtype == "DEL"){
+                    Node * start = con[ var.pos - 1 ];
+                    Node * end = con[stoi( var.info["END"], &sz) - 1 ];
+                    #pragma omp critical
+                    cerr << "Creating edge between " << start->id << " and " << end->id << endl;
+
+
+                                        //start->next.push_back(end);
+                    //end->prev.push_back(start);
+
+                }
+                else if (svtype == "INV"){
+
+                }
+                else if (svtype == "DUP"){
+
+                }
+           }
+           else{
+                #pragma omp critical
+                cerr << "Error: position greater than contig length." << endl
+                 << "Contig length: " << con.size() << "\tPosition: " << pos << endl;
+                exit(1);
+           }
+       }
+       else{
+#pragma omp critical
+           cerr << "Error: vcf file contains variants that are on contigs not present in the reference." << endl
+               << "Are you sure the VCF comes from the right reference? Could contigs be named differently (e.g. CHR1 instread of 1)?" << endl
+               << "exiting" << endl;
+           exit(1);
+       }
+    }
+
+    /**
+     * To transform this into GFA, we make an S entry for each node
+     * and an L entry for each of its NEXT nodes. Each contig is a 
+     * P entry ... we'll have to make sure the label these right.
+     *
+     * Also, we may want to collapse nodes. One way to do this is to pick a node at random, check
+     * if it is of length == 1 and check its in/out degree. Then, loop down its neighbors in both directions
+     * until one of these conditions fails (either the node is already collapsed [len > 1 ] or the node
+     * has in/outdegree greater than 1/1.
+     *
+     */
+
+
+    for (auto x : cont_nodes){
+        for (int i = 0; i < x.second.size(); i++){
+            delete x.second[i];
+        }
+    }
+
+    for (auto x : name_to_seq){
+        delete [] x.second;
+    }
 
 
 
