@@ -44,6 +44,7 @@ struct Node{
     int id; // Must be unique within a contig given how we're going to
     // abuse the id fields later.
     std::string sequence;
+    std::string path;
     vector<Node*> next;
     vector<Node*> prev;
 };
@@ -148,6 +149,7 @@ int main(int argc, char** argv){
             Node* n = new Node();
             n->sequence = seq[i];
             n->id = i;
+            n->path = name;
             cont_nodes[name].push_back(n);
         }
     }
@@ -202,15 +204,17 @@ int main(int argc, char** argv){
                 string svtype = var.info["SVTYPE"];
                 std::string::size_type sz;
                 if (svtype == "DEL"){
-                    Node * start = con[ var.pos - 1 ];
-                    Node * end = con[stoi( var.info["END"], &sz) - 1 ];
-                    #pragma omp critical
-                    cerr << "Creating edge between " << start->id << " and " << end->id << endl;
+                    if (var.info.find("SVLEN") != var.info.end()){
+                        Node * start = con[ var.pos - 1 ];
+                        Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz) - 1 ];
+                        #pragma omp critical
+                        cerr << "Creating edge between " << start->id << " and " << end->id << endl;
+
+                        start->next.push_back(end);
+                        end->prev.push_back(start);
 
 
-                                        //start->next.push_back(end);
-                    //end->prev.push_back(start);
-
+                    }
                 }
                 else if (svtype == "INV"){
 
@@ -246,6 +250,94 @@ int main(int argc, char** argv){
      * has in/outdegree greater than 1/1.
      *
      */
+
+    std::function<vector<Node*>(vector<Node*>)> compact = [](vector<Node*> contig){
+        // Rules:
+        // A node M may be merged with its next node N IFF:
+        //      1. The outdegree of M is == 1
+        //      2. The indegree of N is == 1
+        //      3. id[M] < id[N] and the two IDs are consecutive
+        
+        // Algorithm: 
+        // vector<Node *> ret;
+        // Node* merged_node = contig[0];
+        // for node in contig(1, contig.size]:
+        //   if (outdegree(node - 1) == 1 and indegree(node) == 1 and
+        //       id(node) - 1 == id(node)):
+        //           merged_node->sequence += node.sequence
+        //           merged_node->next = node.next
+        //           delete (node)
+        //           ret.push_back(merged_node)
+        //   else:
+        //       merged_node = node
+        //       ret.push_back(merged_node);
+        vector<Node*> ret;
+        Node* merged = contig[0];
+        for (int i = 1; i < contig.size(); i++){
+            merged = contig[ i - 1 ];
+            Node* curr = contig[ i ];
+
+            if (merged->next.size() == 1 && curr->prev.size() == 1 &&
+                merged->id == curr->id - 1){
+                merged->sequence += curr->sequence;
+                merged->next = curr->next;
+                merged->id = curr->id;
+                ret.push_back(merged);
+                delete curr;
+            }
+            else{
+                merged = curr;
+                ret.push_back(merged);
+            }
+        }
+            return ret;
+    };
+
+    for (auto conti : cont_nodes){
+        cont_nodes [ conti.first ] = compact(conti.second);
+    }
+
+    GFAKluge og;
+    for (auto conti : cont_nodes){
+        string c_name = conti.first;
+        vector<Node*> c_nodes = conti.second;
+        for (int i = 0; i < c_nodes.size(); i++){
+            Node * n = c_nodes[i];
+            sequence_elem seq_el;
+            seq_el.sequence = n->sequence;
+            seq_el.name = std::to_string(n->id);
+            og.add_sequence(seq_el);
+
+            for (int next_ind = 0; next_ind < n->next.size(); next_ind++){
+                link_elem link_el;
+                link_el.source_name = std::to_string(n->id);
+                link_el.sink_name = std::to_string((n->next[next_ind])->id);
+                link_el.source_orientation_forward = true;
+                link_el.sink_orientation_forward = true;
+                //link_el.pos = 0;
+                link_el.cigar = "0M";
+
+                og.add_link(link_el.source_name, link_el);
+            }
+            
+            if (!n->path.empty()){
+                path_elem p_elem;
+                p_elem.name = n->path;
+                p_elem.source_name = std::to_string(n->id);
+                p_elem.rank = i;
+                p_elem.is_reverse = false;
+                p_elem.cigar = "1M";
+
+                og.add_path(p_elem.source_name, p_elem);
+            }
+        }
+
+
+    }
+
+    cout << og << endl;
+
+
 
 
     for (auto x : cont_nodes){
