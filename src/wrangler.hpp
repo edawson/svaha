@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include "rodeo.hpp"
 #include "gfakluge.hpp"
-#include "Variant.h"
+//#include "Variant.h"
 
 using namespace std;
 using namespace gfak;
