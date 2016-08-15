@@ -1,5 +1,6 @@
 #include <iostream>
 #include <functional>
+#include <algorithm>
 #include <getopt.h>
 #include <vector>
 #include <unordered_map>
@@ -20,61 +21,61 @@ using namespace std;
 using namespace gfak;
 using namespace rodeo;
 namespace rodeo{
-KSEQ_INIT(gzFile, gzread)
+    KSEQ_INIT(gzFile, gzread)
 
-    void parse_fastas(vector<char*>& refs,
-            map<string, char*>& seqs,
-            map<string, int>& lengths){
-        for (auto f : refs){
-            gzFile fp;
-            kseq_t *seq;
-            int l;
-            fp = gzopen(f, "r");
-            seq = kseq_init(fp);
-            while ((l = kseq_read(seq)) >= 0) {
-                char * x = new char[seq->seq.l];
-                memcpy(x, seq->seq.s, seq->seq.l);
-                seqs[seq->name.s] = x;
-                lengths[seq->name.s] = seq->seq.l;
+        void parse_fastas(vector<char*>& refs,
+                map<string, char*>& seqs,
+                map<string, int>& lengths){
+            for (auto f : refs){
+                gzFile fp;
+                kseq_t *seq;
+                int l;
+                fp = gzopen(f, "r");
+                seq = kseq_init(fp);
+                while ((l = kseq_read(seq)) >= 0) {
+                    char * x = new char[seq->seq.l];
+                    memcpy(x, seq->seq.s, seq->seq.l);
+                    seqs[seq->name.s] = x;
+                    lengths[seq->name.s] = seq->seq.l;
+                }
+                gzclose(fp);
             }
-            gzclose(fp);
-        }
-    }
-
-struct Node{
-    int id; // Must be unique within a contig given how we're going to
-    // abuse the id fields later.
-    std::string sequence;
-    std::string path;
-    vector<Node*> next;
-    vector<Node*> prev;
-};
-
-/**
-void parse_variants(vector<string>& v_files,
-        vector<vcflib::Variant>& variants){
-    for (auto v : v_files){
-        vcflib::VariantCallFile variant_file;
-        variant_file.open(v);
-        if (!variant_file.is_open()) {
-            cerr << "Error: couldn't open vcf file " << v << endl;
-            exit(1);
         }
 
+    struct Node{
+        int id; // Must be unique within a contig given how we're going to
+        // abuse the id fields later.
+        std::string sequence;
+        std::string path;
+        vector<Node*> next;
+        vector<Node*> prev;
+    };
+
+    /**
+      void parse_variants(vector<string>& v_files,
+      vector<vcflib::Variant>& variants){
+      for (auto v : v_files){
+      vcflib::VariantCallFile variant_file;
+      variant_file.open(v);
+      if (!variant_file.is_open()) {
+      cerr << "Error: couldn't open vcf file " << v << endl;
+      exit(1);
+      }
 
 
 
-    }
-}
+
+      }
+      }
 
 
 
-void make_graph(vector<vcflib::Variant>& vars,
-        map<string, char*>& seqs,
-        map<string, int>& lengths){
+      void make_graph(vector<vcflib::Variant>& vars,
+      map<string, char*>& seqs,
+      map<string, int>& lengths){
 
-}
-*/
+      }
+      */
 }
 
 
@@ -135,42 +136,7 @@ int main(int argc, char** argv){
     // parse fasta reference files using kseq
     parse_fastas(ref_files, name_to_seq, name_to_length); 
 
-    // parse vcf files using VCFlib
-    //vcflib::VariantCallFile v_file;
-    //v_file.open(var_files[0]);
-    //vcflib::Variant var;
-    //while (v_file.getNextVariant(var)){
-    //    cerr << var << endl;
-    //}
 
-//    map<string, map<int, Node*> > pos_to_node;
-    map<string, vector<Node*> > cont_nodes;
-    map<string, char*>::iterator it;
-    for (it = name_to_seq.begin(); it != name_to_seq.end(); it++){
-        string name = it->first;
-        char* seq = it->second;
-        int len = name_to_length[name];
-        for (int i = 0; i < len; i++){
-            Node* n = new Node();
-            n->sequence = seq[i];
-            n->id = i + 1;
-            n->path = name;
-            cont_nodes[name].push_back(n);
-        }
-    }
-
-    for (auto x : cont_nodes){
-        for (int i = 0; i < x.second.size(); i++){
-            if (i >= 1){
-                x.second[i]->prev.push_back( x.second[i-1] );
-            }
-            if (i < x.second.size() - 1){
-                x.second[i]->next.push_back( x.second[i+1] );
-            }
-        }
-    }
-
-    cerr << cont_nodes.size() << " Contigs parsed and turned into nodes." << endl;
 
     vector<vcfparse::Variant> variants;
     vcfparse::Variant var;
@@ -183,6 +149,8 @@ int main(int argc, char** argv){
             variants.push_back(vcfparse::parse_line(line));
         }
     }
+
+    map<string, map<int, vector<int> > > contig_to_node_to_edges;
 
     /**
      * At this point we have a pseudo graph of Nodes,
@@ -202,72 +170,197 @@ int main(int argc, char** argv){
      * if start AND we insrt node ( start + 1 ) into the PREV member of node ( start + len ).
      *
      */
-    omp_set_num_threads(1);
-    #pragma omp parallel for
     for (int i = 0; i < variants.size(); i++){
-       vcfparse::Variant var = variants[i];
-       string contig = var.seq;
-       int pos = var.pos;
-       if (cont_nodes.find(contig) != cont_nodes.end()){
-           vector<Node*> con = cont_nodes[contig];
-           if (pos < con.size()){
-                string svtype = var.info["SVTYPE"];
-                std::string::size_type sz;
-                if (svtype == "DEL"){
-                    if (var.info.find("SVLEN") != var.info.end()){
-                        Node * start = con[ var.pos - 1 ];
-                        Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz)  ];
-                        #pragma omp critical
-                        cerr << "Creating edge between " << start->id << " and " << end->id << endl;
+        vcfparse::Variant var = variants[i];
+        string contig = var.seq;
+        int pos = var.pos;
+        //vector<Node*> con = cont_nodes[contig];
+        //if (pos < con.size()){
+        string svtype = var.info["SVTYPE"];
+        std::string::size_type sz;
+        if (svtype == "DEL"){
+            if (var.info.find("SVLEN") != var.info.end()){
+                contig_to_node_to_edges[var.seq][var.pos - 1].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
 
-                        start->next.push_back(end);
-                        end->prev.push_back(start);
+                //Node * start = con[ var.pos - 1 ];
+                //Node * end = con[ var.pos - 1 + stoi( var.info["SVLEN"], &sz)  ];
+                //#pragma omp critical
+                //cerr << "Creating edge between " << start->id << " and " << end->id << endl;
 
-
-                    }
-                }
-                else if (svtype == "INV"){
-                    Node * start = con[ var.pos - 1 ];
-                    Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz) ];
-                    #pragma omp critical
-                    cerr << "Creating edge between " << start->id << " and " << end->id << endl;
-
-                    start->next.push_back( end - 1 );
-                    end->prev.push_back(start + 2 );
-                    cerr << "Inversions not truly implemented. Best of luck." << endl;
+                //start->next.push_back(end);
+                // end->prev.push_back(start);
 
 
-
-
-                }
-                else if (svtype == "DUP"){
-
-                }
-                else if (svtype == "INS"){
-
-                }
-                else if (svtype == "BND"){
-
-                }
-                else if (svtype == "TRANS"){
-
-                }
-           }
-           else{
-                #pragma omp critical
-                cerr << "Error: position greater than contig length." << endl
-                 << "Contig length: " << con.size() << "\tPosition: " << pos << endl;
-                exit(1);
-           }
-       }
-       else{
+            }
+        }
+        else if (svtype == "INV"){
+            /**
+              Node * start = con[ var.pos - 1 ];
+              Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz) ];
 #pragma omp critical
-           cerr << "Error: vcf file contains variants that are on contigs not present in the reference." << endl
-               << "Are you sure the VCF comes from the right reference? Could contigs be named differently (e.g. CHR1 instread of 1)?" << endl
-               << "exiting" << endl;
-           exit(1);
-       }
+cerr << "Creating edge between " << start->id << " and " << end->id << endl;
+
+start->next.push_back( end - 1 );
+end->prev.push_back(start + 2 );
+cerr << "Inversions not truly implemented. Best of luck." << endl;
+             **/
+
+
+
+        }
+        else if (svtype == "DUP"){
+
+        }
+        else if (svtype == "INS"){
+
+        }
+        else if (svtype == "BND"){
+
+        }
+        else if (svtype == "TRANS"){
+
+        }
+        //}
+        //else{
+        //#pragma omp critical
+        //           cerr << "Error: vcf file contains variants that are on contigs not present in the reference." << endl
+        //               << "Are you sure the VCF comes from the right reference? Could contigs be named differently (e.g. CHR1 instread of 1)?" << endl
+        //               << "exiting" << endl;
+        //           exit(1);
+        //       }
     }
+
+
+    map<string, vector<Node*> > cont_to_nodes;
+    map<string, map<int, vector<int> > >::iterator it;
+    for (it = contig_to_node_to_edges.begin(); it != contig_to_node_to_edges.end(); it++){
+        vector<Node*> cont_nodes;
+
+        char * seq = name_to_seq[it->first];
+        int len = name_to_length[it->first];
+        vector<int> breakpoint_nodes;
+
+        map<int, vector<int> > node_to_dests = it->second;
+        for (auto x : node_to_dests){
+            breakpoint_nodes.push_back(x.first);
+            for (int i = 0; i < x.second.size(); i++){
+                //breakpoint_nodes.push_back(x.second[i]);
+            }
+        }
+
+        std::sort(breakpoint_nodes.begin(), breakpoint_nodes.end());
+        for (auto x : breakpoint_nodes){
+            cerr << x << endl;
+        }
+        //exit(1);
+
+        int start = 0;
+        for (int i = 0; i < breakpoint_nodes.size() - 1; i++){
+            int bpn = breakpoint_nodes[i]; 
+            int end = breakpoint_nodes[i+1];
+            Node * pre;
+            Node * post;
+            Node * nn;
+
+            nn = new Node();
+            nn->id = bpn + 1;
+            nn->sequence.assign(bpn, node_to_dests[bpn][0] - bpn);
+            nn->path = it->first;
+
+            nn->next.push_back(post);
+
+            if (cont_nodes.size() > 0){
+                //cont_nodes[cont_nodes.size() - 1]->next.push_back(pre);
+                //pre
+            }
+            else {
+
+            }
+
+
+            post = new Node();
+            post->id = bpn + 2;
+            post->sequence.assign(seq + bpn + 1, end - bpn);
+            post->path = it->first;
+            pre = new Node();
+            pre->id = bpn;
+            pre->sequence.assign(seq + start, bpn - start);
+            pre->path = it->first;
+            pre->next.push_back(nn);
+
+            cont_nodes.push_back(pre);
+            cont_nodes.push_back(nn);
+            cont_nodes.push_back(post);
+
+
+            //cerr << "Preseq: " << pre->sequence << endl;
+            //cerr << "BP node: " << nn->id << " " << nn-> sequence << endl;
+            //cerr << "Postseq: " << post->sequence << endl;
+
+
+            // TODO misses the last node in the graph
+            // TODO also doesn't add variant edges, just makes a reduced graph right now...
+
+            start = bpn;
+
+
+        }
+
+        if (breakpoint_nodes[breakpoint_nodes.size() - 1] < len){
+            Node * tail = new Node();
+            tail->sequence.assign(seq + breakpoint_nodes[breakpoint_nodes.size() - 1], len - breakpoint_nodes[breakpoint_nodes.size() - 1]);
+            tail->id = breakpoint_nodes[breakpoint_nodes.size() - 1] - 1;
+            tail->path = it->first;
+            cont_nodes[cont_nodes.size() - 1]->next.push_back(tail);
+            cont_nodes.push_back(tail);
+        }
+
+        cont_to_nodes[it->first] = cont_nodes;
+    }
+
+
+    //exit(1);
+
+    //exit(1);
+    // parse vcf files using VCFlib
+    //vcflib::VariantCallFile v_file;
+    //v_file.open(var_files[0]);
+    //vcflib::Variant var;
+    //while (v_file.getNextVariant(var)){
+    //    cerr << var << endl;
+    //}
+
+    //    map<string, map<int, Node*> > pos_to_node;
+    /*
+       map<string, vector<Node*> > cont_nodes;
+       map<string, char*>::iterator it;
+       for (it = name_to_seq.begin(); it != name_to_seq.end(); it++){
+       string name = it->first;
+       char* seq = it->second;
+       int len = name_to_length[name];
+       for (int i = 0; i < len; i++){
+       Node* n = new Node();
+       n->sequence = seq[i];
+       n->id = i + 1;
+       n->path = name;
+       cont_nodes[name].push_back(n);
+       }
+       }
+       */
+
+    /*
+       for (auto x : cont_nodes){
+       for (int i = 0; i < x.second.size(); i++){
+       if (i >= 1){
+       x.second[i]->prev.push_back( x.second[i-1] );
+       }
+       if (i < x.second.size() - 1){
+       x.second[i]->next.push_back( x.second[i+1] );
+       }
+       }
+       }
+       */
+    //cerr << cont_nodes.size() << " Contigs parsed and turned into nodes." << endl;
 
     /**
      * To transform this into GFA, we make an S entry for each node
@@ -287,7 +380,7 @@ int main(int argc, char** argv){
         //      1. The outdegree of M is == 1
         //      2. The indegree of N is == 1
         //      3. id[M] < id[N] and the two IDs are consecutive
-        
+
         // Algorithm: 
         // vector<Node *> ret;
         // Node* merged_node = contig[0];
@@ -315,7 +408,7 @@ int main(int argc, char** argv){
             merged = ret[ ret.size () - 1 ];
 
             if ( merged->next.size() == 1 && curr->prev.size() == 1 &&
-                merged->path == curr->path){
+                    merged->path == curr->path){
                 merged->sequence += curr->sequence;
                 merged->next = curr->next;
                 //merged->id = curr->id;
@@ -327,73 +420,74 @@ int main(int argc, char** argv){
                 ret.push_back(curr);
             }
         }
-            return ret;
+        return ret;
     };
 
-    for (auto conti : cont_nodes){
-        //vector<Node*> orig = conti.second;
-        cont_nodes [ conti.first ] = compact(conti.second);
+    /*
+       for (auto conti : cont_nodes){
+//vector<Node*> orig = conti.second;
+cont_nodes [ conti.first ] = compact(conti.second);
 
-    }
+}
+*/
+GFAKluge og;
+og.set_version();
+for (auto conti : cont_to_nodes){
+    string c_name = conti.first;
+    vector<Node*> c_nodes = conti.second;
+    for (int i = 0; i < c_nodes.size(); i++){
+        Node * n = c_nodes[i];
+        sequence_elem seq_el;
+        seq_el.sequence = n->sequence;
+        seq_el.name = std::to_string(n->id);
+        og.add_sequence(seq_el);
 
-    GFAKluge og;
-    og.set_version();
-    for (auto conti : cont_nodes){
-        string c_name = conti.first;
-        vector<Node*> c_nodes = conti.second;
-        for (int i = 0; i < c_nodes.size(); i++){
-            Node * n = c_nodes[i];
-            sequence_elem seq_el;
-            seq_el.sequence = n->sequence;
-            seq_el.name = std::to_string(n->id);
-            og.add_sequence(seq_el);
+        //cerr << n->next.size() << endl;
+        for (int next_ind = 0; next_ind < n->next.size(); next_ind++){
+            link_elem link_el;
+            link_el.source_name = std::to_string(n->id);
+            link_el.sink_name = std::to_string((n->next[next_ind])->id);
+            link_el.source_orientation_forward = true;
+            link_el.sink_orientation_forward = true;
+            //link_el.pos = 0;
+            link_el.cigar = "0M";
 
-            //cerr << n->next.size() << endl;
-            for (int next_ind = 0; next_ind < n->next.size(); next_ind++){
-                link_elem link_el;
-                link_el.source_name = std::to_string(n->id);
-                link_el.sink_name = std::to_string((n->next[next_ind])->id);
-                link_el.source_orientation_forward = true;
-                link_el.sink_orientation_forward = true;
-                //link_el.pos = 0;
-                link_el.cigar = "0M";
-
-                og.add_link(link_el.source_name, link_el);
-            }
-            
-            if (!n->path.empty()){
-                path_elem p_elem;
-                p_elem.name = n->path;
-                p_elem.source_name = std::to_string(n->id);
-                p_elem.rank = i + 1;
-                p_elem.is_reverse = false;
-                stringstream p_cig;
-                p_cig << n->sequence.length() << "M";
-                p_elem.cigar = p_cig.str();
-
-                og.add_path(p_elem.source_name, p_elem);
-            }
+            og.add_link(link_el.source_name, link_el);
         }
 
+        if (!n->path.empty()){
+            path_elem p_elem;
+            p_elem.name = n->path;
+            p_elem.source_name = std::to_string(n->id);
+            p_elem.rank = i + 1;
+            p_elem.is_reverse = false;
+            stringstream p_cig;
+            p_cig << n->sequence.length() << "M";
+            p_elem.cigar = p_cig.str();
 
-    }
-
-    cout << og;
-
-
-
-
-    for (auto x : cont_nodes){
-        for (int i = 0; i < x.second.size(); i++){
-            delete x.second[i];
+            og.add_path(p_elem.source_name, p_elem);
         }
     }
 
-    for (auto x : name_to_seq){
-        delete [] x.second;
+
+}
+
+cout << og;
+
+
+
+
+for (auto x : cont_to_nodes){
+    for (int i = 0; i < x.second.size(); i++){
+        delete x.second[i];
     }
+}
+
+for (auto x : name_to_seq){
+    delete [] x.second;
+}
 
 
 
-        return 0;
+return 0;
 }
