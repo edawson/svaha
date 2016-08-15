@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <zlib.h>
 #include <fstream>
+#include <omp.h>
 
 #include "rodeo.hpp"
 #include "wrangler.hpp"
@@ -201,6 +202,7 @@ int main(int argc, char** argv){
      * if start AND we insrt node ( start + 1 ) into the PREV member of node ( start + len ).
      *
      */
+    omp_set_num_threads(1);
     #pragma omp parallel for
     for (int i = 0; i < variants.size(); i++){
        vcfparse::Variant var = variants[i];
@@ -317,7 +319,7 @@ int main(int argc, char** argv){
                 merged->sequence += curr->sequence;
                 merged->next = curr->next;
                 //merged->id = curr->id;
-                //delete curr;
+                delete curr;
             }
             else{
                 //merged = curr;
