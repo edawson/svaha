@@ -194,18 +194,7 @@ int main(int argc, char** argv){
             }
         }
         else if (svtype == "INV"){
-            /**
-              Node * start = con[ var.pos - 1 ];
-              Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz) ];
-#pragma omp critical
-cerr << "Creating edge between " << start->id << " and " << end->id << endl;
-
-start->next.push_back( end - 1 );
-end->prev.push_back(start + 2 );
-cerr << "Inversions not truly implemented. Best of luck." << endl;
-             **/
-
-
+   
 
         }
         else if (svtype == "DUP"){
@@ -220,103 +209,73 @@ cerr << "Inversions not truly implemented. Best of luck." << endl;
         else if (svtype == "TRANS"){
 
         }
-        //}
-        //else{
-        //#pragma omp critical
-        //           cerr << "Error: vcf file contains variants that are on contigs not present in the reference." << endl
-        //               << "Are you sure the VCF comes from the right reference? Could contigs be named differently (e.g. CHR1 instread of 1)?" << endl
-        //               << "exiting" << endl;
-        //           exit(1);
-        //       }
     }
-
 
     map<string, vector<Node*> > cont_to_nodes;
+
+    vector<int> breakpoints;
+
     map<string, map<int, vector<int> > >::iterator it;
     for (it = contig_to_node_to_edges.begin(); it != contig_to_node_to_edges.end(); it++){
-        vector<Node*> cont_nodes;
-
-        char * seq = name_to_seq[it->first];
-        int len = name_to_length[it->first];
-        vector<int> breakpoint_nodes;
-
-        map<int, vector<int> > node_to_dests = it->second;
-        for (auto x : node_to_dests){
-            breakpoint_nodes.push_back(x.first);
-            for (int i = 0; i < x.second.size(); i++){
-                //breakpoint_nodes.push_back(x.second[i]);
+        for (auto node_brpts : it->second){
+            breakpoints.push_back(node_brpts.first);
+            for (int i = 0; i < node_brpts.second.size(); i++){
+                breakpoints.push_back(node_brpts.second[i]);
             }
         }
 
-        std::sort(breakpoint_nodes.begin(), breakpoint_nodes.end());
-        for (auto x : breakpoint_nodes){
-            cerr << x << endl;
-        }
-        //exit(1);
-
-        int start = 0;
-        for (int i = 0; i < breakpoint_nodes.size() - 1; i++){
-            int bpn = breakpoint_nodes[i]; 
-            int end = breakpoint_nodes[i+1];
-            Node * pre;
-            Node * post;
-            Node * nn;
-
-            nn = new Node();
-            nn->id = bpn + 1;
-            nn->sequence.assign(bpn, node_to_dests[bpn][0] - bpn);
-            nn->path = it->first;
-
-            nn->next.push_back(post);
-
-            if (cont_nodes.size() > 0){
-                //cont_nodes[cont_nodes.size() - 1]->next.push_back(pre);
-                //pre
-            }
-            else {
-
-            }
-
-
-            post = new Node();
-            post->id = bpn + 2;
-            post->sequence.assign(seq + bpn + 1, end - bpn);
-            post->path = it->first;
-            pre = new Node();
-            pre->id = bpn;
-            pre->sequence.assign(seq + start, bpn - start);
-            pre->path = it->first;
-            pre->next.push_back(nn);
-
-            cont_nodes.push_back(pre);
-            cont_nodes.push_back(nn);
-            cont_nodes.push_back(post);
-
-
-            //cerr << "Preseq: " << pre->sequence << endl;
-            //cerr << "BP node: " << nn->id << " " << nn-> sequence << endl;
-            //cerr << "Postseq: " << post->sequence << endl;
-
-
-            // TODO misses the last node in the graph
-            // TODO also doesn't add variant edges, just makes a reduced graph right now...
-
-            start = bpn;
-
-
-        }
-
-        if (breakpoint_nodes[breakpoint_nodes.size() - 1] < len){
-            Node * tail = new Node();
-            tail->sequence.assign(seq + breakpoint_nodes[breakpoint_nodes.size() - 1], len - breakpoint_nodes[breakpoint_nodes.size() - 1]);
-            tail->id = breakpoint_nodes[breakpoint_nodes.size() - 1] - 1;
-            tail->path = it->first;
-            cont_nodes[cont_nodes.size() - 1]->next.push_back(tail);
-            cont_nodes.push_back(tail);
-        }
-
-        cont_to_nodes[it->first] = cont_nodes;
+        breakpoints.push_back(name_to_length[it->first]);
     }
+
+    std::sort(breakpoints.begin(), breakpoints.end());
+    for (auto x : breakpoints){
+        cerr << x << endl;
+    }
+
+
+    map<int, Node*> id_to_node;
+
+
+    //map<string, vector<Node*> > cont_nodes;
+    for (it = contig_to_node_to_edges.begin(); it != contig_to_node_to_edges.end(); it++){
+        char* seq = name_to_seq[it->first];
+
+        vector<Node*> con; 
+        int n_start = 0;
+        for (int i = 0; i < breakpoints.size(); i++){
+           Node * nn = new Node();
+           nn->sequence.assign(seq + n_start, breakpoints[i] - n_start);
+           nn->id = n_start;
+           nn->path = it->first;
+
+           id_to_node[nn->id] = nn;
+
+           if (con.size() > 0){
+                con[con.size() - 1]->next.push_back(nn);
+                nn->prev.push_back(con[con.size() - 1]);
+           }
+           con.push_back(nn);
+           n_start = breakpoints[i];
+        }
+        cont_to_nodes[it->first] = con;
+    }
+
+    map<string, vector<Node*> >::iterator jt;
+    for (jt = cont_to_nodes.begin(); jt != cont_to_nodes.end(); jt++){
+        for (int i = 0; i < jt->second.size(); i++){
+            if ( (contig_to_node_to_edges[jt->first][ (jt->second[i])->id ]).size() > 0){
+                for (auto bp : (contig_to_node_to_edges[jt->first][ (jt->second[i])->id ])){
+                    cerr << "Edge from " << jt->second[i]->id << " to " << bp << endl;
+                    if (jt->second[i]->prev.size() == 1){
+                        ((jt->second[i])->prev[0])->next.push_back( id_to_node[bp] );
+                    }
+
+                }
+            }
+        }
+    }
+
+
 
 
     //exit(1);
@@ -439,14 +398,14 @@ for (auto conti : cont_to_nodes){
         Node * n = c_nodes[i];
         sequence_elem seq_el;
         seq_el.sequence = n->sequence;
-        seq_el.name = std::to_string(n->id);
+        seq_el.name = std::to_string(n->id + 1);
         og.add_sequence(seq_el);
 
         //cerr << n->next.size() << endl;
         for (int next_ind = 0; next_ind < n->next.size(); next_ind++){
             link_elem link_el;
-            link_el.source_name = std::to_string(n->id);
-            link_el.sink_name = std::to_string((n->next[next_ind])->id);
+            link_el.source_name = std::to_string(n->id + 1);
+            link_el.sink_name = std::to_string((n->next[next_ind])->id + 1);
             link_el.source_orientation_forward = true;
             link_el.sink_orientation_forward = true;
             //link_el.pos = 0;
@@ -458,7 +417,7 @@ for (auto conti : cont_to_nodes){
         if (!n->path.empty()){
             path_elem p_elem;
             p_elem.name = n->path;
-            p_elem.source_name = std::to_string(n->id);
+            p_elem.source_name = std::to_string(n->id + 1);
             p_elem.rank = i + 1;
             p_elem.is_reverse = false;
             stringstream p_cig;
