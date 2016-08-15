@@ -1,0 +1,8 @@
+*.o
+*.a
+*.so
+*.pico
+include/
+lib/
+lasso
+.pre-build
