@@ -225,9 +225,29 @@ int main(int argc, char** argv){
                     }
                 }
                 else if (svtype == "INV"){
+                    Node * start = con[ var.pos - 1 ];
+                    Node * end = con[ var.pos + stoi( var.info["SVLEN"], &sz) ];
+                    #pragma omp critical
+                    cerr << "Creating edge between " << start->id << " and " << end->id << endl;
+
+                    start->next.push_back( end - 1 );
+                    end->prev.push_back(start + 2 );
+                    cerr << "Inversions not truly implemented. Best of luck." << endl;
+
+
+
 
                 }
                 else if (svtype == "DUP"){
+
+                }
+                else if (svtype == "INS"){
+
+                }
+                else if (svtype == "BND"){
+
+                }
+                else if (svtype == "TRANS"){
 
                 }
            }
