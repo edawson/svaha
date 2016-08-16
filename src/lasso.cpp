@@ -179,58 +179,81 @@ int main(int argc, char** argv){
         string svtype = var.info["SVTYPE"];
         std::string::size_type sz;
         if (svtype == "DEL"){
+
+            // These are easy:
+            // simply look to make sure they have a defined length, then 
+            // create an edge between the start node and node [start + len]
+            // This even works if the lengths are negative.
+            //
+            // NB: we must subtract one from the position since genomic coordinates are 1-based and our
+            // internal representations are 0-based
             if (var.info.find("SVLEN") != var.info.end()){
                 contig_to_node_to_edges[var.seq][var.pos - 1].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
-
-                //Node * start = con[ var.pos - 1 ];
-                //Node * end = con[ var.pos - 1 + stoi( var.info["SVLEN"], &sz)  ];
-                //#pragma omp critical
-                //cerr << "Creating edge between " << start->id << " and " << end->id << endl;
-
-                //start->next.push_back(end);
-                // end->prev.push_back(start);
-
 
             }
         }
         else if (svtype == "INV"){
-   
+                // A tiny bit more complicated than deletions 
+                // check if we have a defined length
+                // then, we must create TWO edges
+                // 1 from [ start - 1 ] to [ length ]
+                // and one from [ length + 1 ] to [ start ]
+                //
+                // NB: as for deletions, we must subtract 1 from the posiiton due to 1/0-based difference
+                // TODO weird stuff might happen if we are at the tip of a graph
+            if (var.info.find("SVLEN") != var.info.end()){
+                // Yes, these can be simplified.
+                // But I've left the -1 there as a reminder that it's an offset
+                contig_to_node_to_edges[var.seq][var.pos - 1 - 1 ].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
+                contig_to_node_to_edges[var.seq][var.pos - 1].push_back( var.pos - 1 + 1 + stoi( var.info["SVLEN"], &sz) );
+            }
 
         }
         else if (svtype == "DUP"){
-
+            // Two choices here
+            // 1. Cyclic graph: simply create an edge from the end to the start of the repeated sequence
+            // 2. Acyclic graph: unroll the sequence the number of times it is repeated,
+            //      and add nodes for EACH number of possible times it is repeated. Then make edges
+            //      from the node before the repeat to the node after the repeat passing through each of these.
         }
         else if (svtype == "INS"){
+            // These aren't too bad, but we'll need to be able to grab the variant back from the functions below.
+            // so that we can insert the sequence into the graph at the right spot.
 
         }
         else if (svtype == "BND"){
+            // If these are paired, simply create edges
+            // If they are not there isn't much we can do.
+            // We should use the remapping abilities of VG to verify which breakends are valid.
 
         }
         else if (svtype == "TRANS"){
-
+            // For these, we create FOUR edges (if they are reciprocal)
+            // and TWO edges if not.
         }
+        /* TODO: we should come up with a way to 
+         * handle SNPs. They are relatively easy, but our VCF parsing and handling may have to change.
+         *
+         */
     }
 
     map<string, vector<Node*> > cont_to_nodes;
 
-    vector<int> breakpoints;
+    map<string, vector<int> > cont_to_breakpoints;
 
     map<string, map<int, vector<int> > >::iterator it;
     for (it = contig_to_node_to_edges.begin(); it != contig_to_node_to_edges.end(); it++){
         for (auto node_brpts : it->second){
-            breakpoints.push_back(node_brpts.first);
+            cont_to_breakpoints[it->first].push_back(node_brpts.first);
             for (int i = 0; i < node_brpts.second.size(); i++){
-                breakpoints.push_back(node_brpts.second[i]);
+                cont_to_breakpoints[it->first].push_back(node_brpts.second[i]);
             }
         }
+        cont_to_breakpoints[it->first].push_back(name_to_length[it->first]);
 
-        breakpoints.push_back(name_to_length[it->first]);
+        std::sort(cont_to_breakpoints[it->first].begin(), cont_to_breakpoints[it->first].end());
     }
 
-    std::sort(breakpoints.begin(), breakpoints.end());
-    for (auto x : breakpoints){
-        cerr << x << endl;
-    }
 
 
     map<int, Node*> id_to_node;
@@ -239,6 +262,7 @@ int main(int argc, char** argv){
     //map<string, vector<Node*> > cont_nodes;
     for (it = contig_to_node_to_edges.begin(); it != contig_to_node_to_edges.end(); it++){
         char* seq = name_to_seq[it->first];
+        vector<int> breakpoints = cont_to_breakpoints[it->first];
 
         vector<Node*> con; 
         int n_start = 0;
@@ -267,7 +291,7 @@ int main(int argc, char** argv){
                 for (auto bp : (contig_to_node_to_edges[jt->first][ (jt->second[i])->id ])){
                     cerr << "Edge from " << jt->second[i]->id << " to " << bp << endl;
                     if (jt->second[i]->prev.size() == 1){
-                        ((jt->second[i])->prev[0])->next.push_back( id_to_node[bp] );
+                        //((jt->second[i])->prev[0])->next.push_back( id_to_node[bp] );
                     }
 
                 }
