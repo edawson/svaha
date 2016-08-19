@@ -4,6 +4,7 @@
 #include <getopt.h>
 #include <vector>
 #include <unordered_map>
+#include <tuple>
 #include <zlib.h>
 #include <fstream>
 #include <omp.h>
@@ -151,6 +152,10 @@ int main(int argc, char** argv){
     }
 
     map<string, map<int, vector<int> > > contig_to_node_to_edges;
+    map<string, map<int, vector<pair<int, string> > > > contig_to_node_to_endpoint_svtype;
+    map<string, vector<int> > contig_to_breakpoints;
+    //map<string, map<int, vector<tuple<bool, int, bool> > > >
+    map<string, map<int, vector<pair<int, bool> > > > contig_to_node_to_endpoint_isreverse;
 
     /**
      * At this point we have a pseudo graph of Nodes,
@@ -189,6 +194,7 @@ int main(int argc, char** argv){
             // internal representations are 0-based
             if (var.info.find("SVLEN") != var.info.end()){
                 contig_to_node_to_edges[var.seq][var.pos - 1].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
+                //contig_to_node_to_endpoint_svtype[ var.seq ][ var.pos - 1 ].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
 
             }
         }
@@ -205,7 +211,9 @@ int main(int argc, char** argv){
                 // Yes, these can be simplified.
                 // But I've left the -1 there as a reminder that it's an offset
                 contig_to_node_to_edges[var.seq][var.pos - 1 - 1 ].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
+                //contig_to_node_to_edges[var.seq][var.pos - 1 ].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
                 contig_to_node_to_edges[var.seq][var.pos - 1].push_back( var.pos - 1 + 1 + stoi( var.info["SVLEN"], &sz) );
+                //contig_to_node_to_edges[var.seq][var.pos].push_back( var.pos + stoi( var.info["SVLEN"], &sz) );
             }
 
         }
@@ -291,7 +299,7 @@ int main(int argc, char** argv){
                 for (auto bp : (contig_to_node_to_edges[jt->first][ (jt->second[i])->id ])){
                     cerr << "Edge from " << jt->second[i]->id << " to " << bp << endl;
                     if (jt->second[i]->prev.size() == 1){
-                        //((jt->second[i])->prev[0])->next.push_back( id_to_node[bp] );
+                        ((jt->second[i])->prev[0])->next.push_back( id_to_node[bp] );
                     }
 
                 }
@@ -299,51 +307,6 @@ int main(int argc, char** argv){
         }
     }
 
-
-
-
-    //exit(1);
-
-    //exit(1);
-    // parse vcf files using VCFlib
-    //vcflib::VariantCallFile v_file;
-    //v_file.open(var_files[0]);
-    //vcflib::Variant var;
-    //while (v_file.getNextVariant(var)){
-    //    cerr << var << endl;
-    //}
-
-    //    map<string, map<int, Node*> > pos_to_node;
-    /*
-       map<string, vector<Node*> > cont_nodes;
-       map<string, char*>::iterator it;
-       for (it = name_to_seq.begin(); it != name_to_seq.end(); it++){
-       string name = it->first;
-       char* seq = it->second;
-       int len = name_to_length[name];
-       for (int i = 0; i < len; i++){
-       Node* n = new Node();
-       n->sequence = seq[i];
-       n->id = i + 1;
-       n->path = name;
-       cont_nodes[name].push_back(n);
-       }
-       }
-       */
-
-    /*
-       for (auto x : cont_nodes){
-       for (int i = 0; i < x.second.size(); i++){
-       if (i >= 1){
-       x.second[i]->prev.push_back( x.second[i-1] );
-       }
-       if (i < x.second.size() - 1){
-       x.second[i]->next.push_back( x.second[i+1] );
-       }
-       }
-       }
-       */
-    //cerr << cont_nodes.size() << " Contigs parsed and turned into nodes." << endl;
 
     /**
      * To transform this into GFA, we make an S entry for each node
