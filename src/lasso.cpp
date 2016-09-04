@@ -79,6 +79,14 @@ namespace rodeo{
       */
 }
 
+void print_help(char** argv){
+    cerr << "lasso: make structura variation graphs." << endl
+        << "usage: " << argv[0] << " [options]" << endl
+        << "-r/--reference  the reference genome to add SVs to." << endl
+        << " -v/--vcf       a VCF file containing SVs." << endl
+        << endl;
+}
+
 
 int main(int argc, char** argv){
     vector<char*> ref_files;
@@ -138,25 +146,23 @@ int main(int argc, char** argv){
     parse_fastas(ref_files, name_to_seq, name_to_length); 
 
 
+    //map<string, map<int, vector<pair<int, pair<bool, bool> > > > > contig_to_source_to_sink_tostart_fromend;
+    map<string, vector<int> > contig_to_breakpoints;
+    map<string, vector<vcfparse::Variant> > contig_to_variants;
+    map<string, map<int, vector<tuple< int, bool, bool> > > > contig_to_source_to_sink_tostart_fromend;
 
-    vector<vcfparse::Variant> variants;
-    vcfparse::Variant var;
+    map<string, map<int, vector<string> > > contig_to_pos_to_seq;
+
 
     std::ifstream infile(var_files[0]);
     std::string line;
     while (std::getline(infile, line))
     {   
         if (line[0] != '#'){
-            variants.push_back(vcfparse::parse_line(line));
+            vcfparse::Variant v = vcfparse::parse_line(line);
+            contig_to_variants[v.seq].push_back(v);
         }
     }
-
-    map<string, map<int, vector<int> > > contig_to_node_to_edges;
-    map<string, map<int, vector<pair<int, string> > > > contig_to_node_to_endpoint_svtype;
-    map<string, vector<int> > contig_to_breakpoints;
-    //map<string, map<int, vector<tuple<bool, int, bool> > > >
-    map<string, map<int, vector<pair<int, bool> > > > contig_to_node_to_endpoint_isreverse;
-
     /**
      * At this point we have a pseudo graph of Nodes,
      * one per base in the sequence.
@@ -175,265 +181,181 @@ int main(int argc, char** argv){
      * if start AND we insrt node ( start + 1 ) into the PREV member of node ( start + len ).
      *
      */
-    for (int i = 0; i < variants.size(); i++){
-        vcfparse::Variant var = variants[i];
-        string contig = var.seq;
-        int pos = var.pos;
-        //vector<Node*> con = cont_nodes[contig];
-        //if (pos < con.size()){
-        string svtype = var.info["SVTYPE"];
-        std::string::size_type sz;
-        if (svtype == "DEL"){
+    for (auto c_v : contig_to_variants){
+        vector<vcfparse::Variant> variants = c_v.second;
+        for (int i = 0; i < variants.size(); i++){
+            vcfparse::Variant var = variants[i];
+            std::string::size_type sz;
+            if (var.info["SVTYPE"] == "DEL"){
+                // Add two breakpoints
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + (unsigned int) stoi(var.info["SVLEN"], &sz) );
+                
+                //Add a single edge to represent the deletion
+                contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos -1 ].push_back(std::make_tuple(var.pos - 1 + stoi(var.info["SVLEN"], &sz), true, true));
+            }
+            else if (var.info["SVTYPE"] == "INV"){
+                // Add two breakpoints
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
 
-            // These are easy:
-            // simply look to make sure they have a defined length, then 
-            // create an edge between the start node and node [start + len]
-            // This even works if the lengths are negative.
-            //
-            // NB: we must subtract one from the position since genomic coordinates are 1-based and our
-            // internal representations are 0-based
-            if (var.info.find("SVLEN") != var.info.end()){
-                contig_to_node_to_edges[var.seq][var.pos - 1].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
-                //contig_to_node_to_endpoint_svtype[ var.seq ][ var.pos - 1 ].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
+                // Add two edges
+                contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos - 1 ].push_back(std::make_tuple( var.pos - 1, true, false));
+                contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos - 1  + stoi(var.info["SVLEN"], &sz) ].push_back(std::make_tuple(var.pos - 1 + stoi(var.info["SVLEN"], &sz) ,false, true));
+            }
+            else if (var.info["SVTYPE"] == "INS"){
+                // Add two breakpoints
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
+
+                // Add a new node with the inserted sequence
+                
+                // Add two edges
 
             }
-        }
-        else if (svtype == "INV"){
-                // A tiny bit more complicated than deletions 
-                // check if we have a defined length
-                // then, we must create TWO edges
-                // 1 from [ start - 1 ] to [ length ]
-                // and one from [ length + 1 ] to [ start ]
-                //
-                // NB: as for deletions, we must subtract 1 from the posiiton due to 1/0-based difference
-                // TODO weird stuff might happen if we are at the tip of a graph
-            if (var.info.find("SVLEN") != var.info.end()){
-                // Yes, these can be simplified.
-                // But I've left the -1 there as a reminder that it's an offset
-                contig_to_node_to_edges[var.seq][var.pos - 1 - 1 ].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
-                //contig_to_node_to_edges[var.seq][var.pos - 1 ].push_back( var.pos - 1 + stoi( var.info["SVLEN"], &sz) );
-                contig_to_node_to_edges[var.seq][var.pos - 1].push_back( var.pos - 1 + 1 + stoi( var.info["SVLEN"], &sz) );
-                //contig_to_node_to_edges[var.seq][var.pos].push_back( var.pos + stoi( var.info["SVLEN"], &sz) );
+            else if (var.info["SVTYPE"] == "DUP"){
+                // Add a single cyclic edge and two breakpoints
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
+                contig_to_source_to_sink_tostart_fromend[var.seq][var.pos - 1].push_back(std::make_tuple(var.pos -1, true, true));
             }
+            else if (var.info["SVTYPE"] == "BND"){
 
-        }
-        else if (svtype == "DUP"){
-            // Two choices here
-            // 1. Cyclic graph: simply create an edge from the end to the start of the repeated sequence
-            // 2. Acyclic graph: unroll the sequence the number of times it is repeated,
-            //      and add nodes for EACH number of possible times it is repeated. Then make edges
-            //      from the node before the repeat to the node after the repeat passing through each of these.
-        }
-        else if (svtype == "INS"){
-            // These aren't too bad, but we'll need to be able to grab the variant back from the functions below.
-            // so that we can insert the sequence into the graph at the right spot.
-
-        }
-        else if (svtype == "BND"){
-            // If these are paired, simply create edges
-            // If they are not there isn't much we can do.
-            // We should use the remapping abilities of VG to verify which breakends are valid.
-
-        }
-        else if (svtype == "TRANS"){
-            // For these, we create FOUR edges (if they are reciprocal)
-            // and TWO edges if not.
-        }
-        /* TODO: we should come up with a way to 
-         * handle SNPs. They are relatively easy, but our VCF parsing and handling may have to change.
-         *
-         */
-    }
-
-    map<string, vector<Node*> > cont_to_nodes;
-
-    map<string, vector<int> > cont_to_breakpoints;
-
-    map<string, map<int, vector<int> > >::iterator it;
-    for (it = contig_to_node_to_edges.begin(); it != contig_to_node_to_edges.end(); it++){
-        for (auto node_brpts : it->second){
-            cont_to_breakpoints[it->first].push_back(node_brpts.first);
-            for (int i = 0; i < node_brpts.second.size(); i++){
-                cont_to_breakpoints[it->first].push_back(node_brpts.second[i]);
             }
-        }
-        cont_to_breakpoints[it->first].push_back(name_to_length[it->first]);
-
-        std::sort(cont_to_breakpoints[it->first].begin(), cont_to_breakpoints[it->first].end());
-    }
-
-
-
-    map<int, Node*> id_to_node;
-
-
-    //map<string, vector<Node*> > cont_nodes;
-    for (it = contig_to_node_to_edges.begin(); it != contig_to_node_to_edges.end(); it++){
-        char* seq = name_to_seq[it->first];
-        vector<int> breakpoints = cont_to_breakpoints[it->first];
-
-        vector<Node*> con; 
-        int n_start = 0;
-        for (int i = 0; i < breakpoints.size(); i++){
-           Node * nn = new Node();
-           nn->sequence.assign(seq + n_start, breakpoints[i] - n_start);
-           nn->id = n_start;
-           nn->path = it->first;
-
-           id_to_node[nn->id] = nn;
-
-           if (con.size() > 0){
-                con[con.size() - 1]->next.push_back(nn);
-                nn->prev.push_back(con[con.size() - 1]);
-           }
-           con.push_back(nn);
-           n_start = breakpoints[i];
-        }
-        cont_to_nodes[it->first] = con;
-    }
-
-    map<string, vector<Node*> >::iterator jt;
-    for (jt = cont_to_nodes.begin(); jt != cont_to_nodes.end(); jt++){
-        for (int i = 0; i < jt->second.size(); i++){
-            if ( (contig_to_node_to_edges[jt->first][ (jt->second[i])->id ]).size() > 0){
-                for (auto bp : (contig_to_node_to_edges[jt->first][ (jt->second[i])->id ])){
-                    cerr << "Edge from " << jt->second[i]->id << " to " << bp << endl;
-                    if (jt->second[i]->prev.size() == 1){
-                        ((jt->second[i])->prev[0])->next.push_back( id_to_node[bp] );
-                    }
-
+            else{
+                // it's a SNP?
+                // add two breakpoints, a single-base node and two edges
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 - 1);
+                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + 1);
+                for (auto i_alt : var.alts){
+                    contig_to_pos_to_seq[var.seq][var.pos - 1].push_back(i_alt);
                 }
             }
         }
+        contig_to_breakpoints[c_v.first].push_back(name_to_length[c_v.first]);
     }
 
+    map<int, Node*> id_to_node;
 
-    /**
-     * To transform this into GFA, we make an S entry for each node
-     * and an L entry for each of its NEXT nodes. Each contig is a 
-     * P entry ... we'll have to make sure the label these right.
-     *
-     * Also, we may want to collapse nodes. One way to do this is to pick a node at random, check
-     * if it is of length == 1 and check its in/out degree. Then, loop down its neighbors in both directions
-     * until one of these conditions fails (either the node is already collapsed [len > 1 ] or the node
-     * has in/outdegree greater than 1/1.
-     *
-     */
+    map<string, vector<Node*> >cont_to_nodes;
 
-    std::function<vector<Node*>(vector<Node*>)> compact = [](vector<Node*> contig){
-        // Rules:
-        // A node M may be merged with its next node N IFF:
-        //      1. The outdegree of M is == 1
-        //      2. The indegree of N is == 1
-        //      3. id[M] < id[N] and the two IDs are consecutive
+    //map<string, vector<Node*> > cont_nodes;
+    map<string, map<int, vector<tuple<int, bool, bool> > > >::iterator it;
+    for (it = contig_to_source_to_sink_tostart_fromend.begin(); it != contig_to_source_to_sink_tostart_fromend.end(); it++){
+        char* seq = name_to_seq[it->first];
+        vector<int> breakpoints = contig_to_breakpoints[it->first];
+        std::sort(breakpoints.begin(), breakpoints.end());
 
-        // Algorithm: 
-        // vector<Node *> ret;
-        // Node* merged_node = contig[0];
-        // for node in contig(1, contig.size]:
-        //   if (outdegree(node - 1) == 1 and indegree(node) == 1 and
-        //       id(node) - 1 == id(node)):
-        //           merged_node->sequence += node.sequence
-        //           merged_node->next = node.next
-        //           delete (node)
-        //           ret.push_back(merged_node)
-        //   else:
-        //       merged_node = node
-        //       ret.push_back(merged_node);
-        vector<Node*> ret;
-        //Node* merged = memcpy(contig[0];
-        Node* merged = new Node();
-        merged->sequence = contig[0]->sequence;
-        merged->path = contig[0]->path;
-        merged->id = contig[0]->id;
-        merged->next = contig[0]->next;
-        ret.push_back(merged);
-        //cerr << contig[0]->next.size();
-        for (int i = 1; i < contig.size(); i++){
-            Node* curr = contig[ i ];
-            merged = ret[ ret.size () - 1 ];
+        GFAKluge gg;
+        gg.set_version();
 
-            if ( merged->next.size() == 1 && curr->prev.size() == 1 &&
-                    merged->path == curr->path){
-                merged->sequence += curr->sequence;
-                merged->next = curr->next;
-                //merged->id = curr->id;
-                delete curr;
+        // gives us the ability to get the previous node, which we need for all types
+        // of SV pretty much.
+        vector<int> con;
+        int n_start = 0;
+        for (int i = 0; i < breakpoints.size(); i++){
+            
+            sequence_elem sq;
+            sq.sequence.assign(seq + n_start, breakpoints[i] - n_start);
+            sq.name = std::to_string(n_start + 1);
+            gg.add_sequence(sq);
+
+            vector<string> seqs = contig_to_pos_to_seq[it->first][n_start]; 
+            if (seqs.size() > 0){
+                for (int i_seq= 0; i_seq < seqs.size(); i_seq++){
+                    sequence_elem insert_seq;
+                    insert_seq.sequence.assign(seqs[i_seq]);
+                    insert_seq.name = std::to_string(n_start + 1) + "." + std::to_string(i_seq);
+
+                    gg.add_sequence(insert_seq);
+
+                    link_elem pre_ll;
+                    pre_ll.source_name = std::to_string(n_start + 1);
+                    pre_ll.sink_name = insert_seq.name;
+                    pre_ll.source_orientation_forward = true;
+                    pre_ll.sink_orientation_forward = true;
+                    pre_ll.cigar = "0M";
+
+                    gg.add_link(pre_ll.source_name, pre_ll);
+
+                    link_elem post_ll;
+                    post_ll.source_name = insert_seq.name;
+                    post_ll.sink_name = std::to_string(breakpoints[i]);
+                    post_ll.source_orientation_forward = true;
+                    post_ll.sink_orientation_forward = true;
+                    post_ll.cigar = "0M";
+
+                    gg.add_link(post_ll.source_name, post_ll);
+
+                }
+            }
+
+            if (i < breakpoints.size() - 1){
+                link_elem ref_l;
+                ref_l.source_name = std::to_string(n_start + 1);
+                ref_l.sink_name = std::to_string(breakpoints[i] + 1);
+                ref_l.source_orientation_forward = true;
+                ref_l.sink_orientation_forward = true;
+                ref_l.cigar = "0M";
+                gg.add_link(ref_l.source_name, ref_l);
+            }
+
+            for (auto x : it->second[n_start]){
+                link_elem ll;
+                ll.source_name = std::to_string(con[con.size() - 1] + 1);
+                ll.sink_name = std::to_string( std::get<0>(x) + 1);
+                ll.source_orientation_forward = std::get<1>(x);
+                ll.sink_orientation_forward = std::get<2>(x);
+                ll.cigar = "0M";
+
+                gg.add_link(ll.source_name, ll);
+
+            }
+
+            // Add the reference path, as these are reference nodes.
+            path_elem pe;
+            pe.name = it->first;
+            pe.rank = i+1;
+            pe.source_name = sq.name;
+            pe.is_reverse = false;
+            stringstream p_cig;
+            p_cig << sq.sequence.length() << "M";
+            pe.cigar = p_cig.str();
+            gg.add_path(pe.source_name, pe);
+
+            con.push_back(n_start);
+            n_start = breakpoints[i];
+        }
+
+
+        vector<vcfparse::Variant> variants = contig_to_variants[it->first];
+        for (int i = 0; i < variants.size(); i++){
+            vcfparse::Variant var = variants[i];
+            std::string::size_type sz;
+            if (var.info["SVTYPE"] == "DEL"){
+
+            }
+            else if (var.info["SVTYPE"] == "INV"){
+            }
+            else if (var.info["SVTYPE"] == "INS"){
+            }
+            else if (var.info["SVTYPE"] == "DUP"){
+            }
+            else if (var.info["SVTYPE"] == "BND"){
             }
             else{
-                //merged = curr;
-                //ret.push_back(merged);
-                ret.push_back(curr);
             }
         }
-        return ret;
-    };
+ 
 
-    /*
-       for (auto conti : cont_nodes){
-//vector<Node*> orig = conti.second;
-cont_nodes [ conti.first ] = compact(conti.second);
+    cout << gg;
+    }
 
-}
-*/
-GFAKluge og;
-og.set_version();
-for (auto conti : cont_to_nodes){
-    string c_name = conti.first;
-    vector<Node*> c_nodes = conti.second;
-    for (int i = 0; i < c_nodes.size(); i++){
-        Node * n = c_nodes[i];
-        sequence_elem seq_el;
-        seq_el.sequence = n->sequence;
-        seq_el.name = std::to_string(n->id + 1);
-        og.add_sequence(seq_el);
-
-        //cerr << n->next.size() << endl;
-        for (int next_ind = 0; next_ind < n->next.size(); next_ind++){
-            link_elem link_el;
-            link_el.source_name = std::to_string(n->id + 1);
-            link_el.sink_name = std::to_string((n->next[next_ind])->id + 1);
-            link_el.source_orientation_forward = true;
-            link_el.sink_orientation_forward = true;
-            //link_el.pos = 0;
-            link_el.cigar = "0M";
-
-            og.add_link(link_el.source_name, link_el);
-        }
-
-        if (!n->path.empty()){
-            path_elem p_elem;
-            p_elem.name = n->path;
-            p_elem.source_name = std::to_string(n->id + 1);
-            p_elem.rank = i + 1;
-            p_elem.is_reverse = false;
-            stringstream p_cig;
-            p_cig << n->sequence.length() << "M";
-            p_elem.cigar = p_cig.str();
-
-            og.add_path(p_elem.source_name, p_elem);
-        }
+    for (auto x : name_to_seq){
+        delete [] x.second;
     }
 
 
-}
 
-cout << og;
-
-
-
-
-for (auto x : cont_to_nodes){
-    for (int i = 0; i < x.second.size(); i++){
-        delete x.second[i];
-    }
-}
-
-for (auto x : name_to_seq){
-    delete [] x.second;
-}
-
-
-
-return 0;
+    return 0;
 }
