@@ -220,6 +220,9 @@ int main(int argc, char** argv){
                 contig_to_source_to_sink_tostart_fromend[var.seq][var.pos - 1].push_back(std::make_tuple(var.pos -1, true, true));
             }
             else if (var.info["SVTYPE"] == "BND"){
+                // TODO I'm just not sure how to handle breakends.
+                // Their natural representation is, at its simplest, just "breakpoints" in the graph, but there
+                // should be corresponding edges, too.
 
             }
             else{
