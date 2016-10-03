@@ -142,6 +142,8 @@ int main(int argc, char** argv){
 
     map<string, char*> name_to_seq;
     map<string, int> name_to_length;
+
+    int global_max_id = 0;
     // parse fasta reference files using kseq
     parse_fastas(ref_files, name_to_seq, name_to_length); 
 
@@ -152,6 +154,8 @@ int main(int argc, char** argv){
     map<string, map<int, vector<tuple< int, bool, bool> > > > contig_to_source_to_sink_tostart_fromend;
 
     map<string, map<int, vector<string> > > contig_to_pos_to_seq;
+
+    map<string, int> contig_max_id;
 
 
     std::ifstream infile(var_files[0]);
@@ -186,61 +190,83 @@ int main(int argc, char** argv){
         for (int i = 0; i < variants.size(); i++){
             vcfparse::Variant var = variants[i];
             std::string::size_type sz;
-            if (var.info["SVTYPE"] == "DEL"){
-                // Add two breakpoints
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + (unsigned int) stoi(var.info["SVLEN"], &sz) );
-                
-                //Add a single edge to represent the deletion
-                contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos -1 ].push_back(std::make_tuple(var.pos - 1 + stoi(var.info["SVLEN"], &sz), true, true));
-            }
-            else if (var.info["SVTYPE"] == "INV"){
-                // Add two breakpoints
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
 
-                // Add two edges
-                contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos - 1 ].push_back(std::make_tuple( var.pos - 1, true, false));
-                contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos - 1  + stoi(var.info["SVLEN"], &sz) ].push_back(std::make_tuple(var.pos - 1 + stoi(var.info["SVLEN"], &sz) ,false, true));
-            }
-            else if (var.info["SVTYPE"] == "INS"){
-                // Add two breakpoints
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
+            if (!var.info["SVLEN"].empty()){
+                if (var.info["SVTYPE"] == "DEL"){
+                    // Add two breakpoints
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 + (unsigned int) stoi(var.info["SVLEN"], &sz) );
 
-                // Add a new node with the inserted sequence
-                
-                // Add two edges
+                    //Add a single edge to represent the deletion
+                    contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos -1 ].push_back(std::make_tuple(var.pos - 1 + stoi(var.info["SVLEN"], &sz), true, true));
+                }
+                else if (var.info["SVTYPE"] == "INV"){
+                    // Add two breakpoints
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
 
-            }
-            else if (var.info["SVTYPE"] == "DUP"){
-                // Add a single cyclic edge and two breakpoints
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
-                contig_to_source_to_sink_tostart_fromend[var.seq][var.pos - 1].push_back(std::make_tuple(var.pos -1, true, true));
-            }
-            else if (var.info["SVTYPE"] == "BND"){
-                // TODO I'm just not sure how to handle breakends.
-                // Their natural representation is, at its simplest, just "breakpoints" in the graph, but there
-                // should be corresponding edges, too.
+                    // Add two edges
+                    contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos - 1 ].push_back(std::make_tuple( var.pos - 1, true, false));
+                    contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos - 1  + stoi(var.info["SVLEN"], &sz) ].push_back(std::make_tuple(var.pos - 1 + stoi(var.info["SVLEN"], &sz) ,false, true));
+                }
+                else if (var.info["SVTYPE"] == "INS"){
+                    // Add two breakpoints
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
 
-            }
-            else{
-                // it's a SNP?
-                // add two breakpoints, a single-base node and two edges
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 - 1);
-                contig_to_breakpoints[var.seq].push_back( var.pos - 1 + 1);
-                for (auto i_alt : var.alts){
-                    contig_to_pos_to_seq[var.seq][var.pos - 1].push_back(i_alt);
+                    // Add a new node with the inserted sequence
+
+                    // Add two edges
+
+                }
+                else if (var.info["SVTYPE"] == "DUP"){
+                    // Add a single cyclic edge and two breakpoints
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 + stoi(var.info["SVLEN"], &sz) );
+                    contig_to_source_to_sink_tostart_fromend[var.seq][var.pos - 1].push_back(std::make_tuple(var.pos -1, true, true));
+                }
+                else if (var.info["SVTYPE"] == "BND"){
+                    // TODO I'm just not sure how to handle breakends.
+                    // Their natural representation is, at its simplest, just "breakpoints" in the graph, but there
+                    // should be corresponding edges, too.
+
+                }
+                else{
+                    // it's a SNP?
+                    // add two breakpoints, a single-base node and two edges
+                    //contig_to_breakpoints[var.seq].push_back( var.pos - 1 - 1);
+                    //contig_to_breakpoints[var.seq].push_back( var.pos - 1 + 1);
+                    //for (auto i_alt : var.alts){
+                    //    contig_to_pos_to_seq[var.seq][var.pos - 1].push_back(i_alt);
+                    //}
                 }
             }
+        else{
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 );
+                    contig_to_breakpoints[var.seq].push_back( var.pos - 1 + 1);
+                    int count = 0;
+                    for (auto i_alt : var.alts){
+                        contig_to_pos_to_seq[var.seq][var.pos - 1].push_back(i_alt);
+                        //contig_to_source_to_sink_tostart_fromend[var.seq][ var.pos - 1 ].push_back(std::make_tuple(var.pos - 1, true, true));S
+                        ++count;
+                    }
+
+        }
         }
         contig_to_breakpoints[c_v.first].push_back(name_to_length[c_v.first]);
+        if (!contig_to_breakpoints[c_v.first].empty()){
+            contig_max_id[c_v.first] = contig_to_breakpoints[c_v.first].back();
+        }
     }
 
     map<int, Node*> id_to_node;
 
     map<string, vector<Node*> >cont_to_nodes;
+
+
+    GFAKluge gg;
+    gg.set_version();
+
 
     //map<string, vector<Node*> > cont_nodes;
     map<string, map<int, vector<tuple<int, bool, bool> > > >::iterator it;
@@ -248,16 +274,12 @@ int main(int argc, char** argv){
         char* seq = name_to_seq[it->first];
         vector<int> breakpoints = contig_to_breakpoints[it->first];
         std::sort(breakpoints.begin(), breakpoints.end());
-
-        GFAKluge gg;
-        gg.set_version();
-
         // gives us the ability to get the previous node, which we need for all types
         // of SV pretty much.
         vector<int> con;
         int n_start = 0;
         for (int i = 0; i < breakpoints.size(); i++){
-            
+
             sequence_elem sq;
             sq.sequence.assign(seq + n_start, breakpoints[i] - n_start);
             sq.name = std::to_string(n_start + 1);
@@ -265,25 +287,29 @@ int main(int argc, char** argv){
 
             vector<string> seqs = contig_to_pos_to_seq[it->first][n_start]; 
             if (seqs.size() > 0){
+
                 for (int i_seq= 0; i_seq < seqs.size(); i_seq++){
                     sequence_elem insert_seq;
                     insert_seq.sequence.assign(seqs[i_seq]);
-                    insert_seq.name = std::to_string(n_start + 1) + "." + std::to_string(i_seq);
+                    insert_seq.name = std::to_string(++contig_max_id[it->first]); //+ "." + std::to_string(char ( i_seq ));
 
                     gg.add_sequence(insert_seq);
 
                     link_elem pre_ll;
-                    pre_ll.source_name = std::to_string(n_start + 1);
+                    // TODO could lead to Out of Bounds error
+                    cerr << breakpoints[ i ] << endl;
+                    pre_ll.source_name = std::to_string( breakpoints[i - 2] + 1 ); //std::to_string(n_start + 1);
                     pre_ll.sink_name = insert_seq.name;
                     pre_ll.source_orientation_forward = true;
                     pre_ll.sink_orientation_forward = true;
                     pre_ll.cigar = "0M";
 
                     gg.add_link(pre_ll.source_name, pre_ll);
+                    cerr << pre_ll.source_name << " " << pre_ll.sink_name << endl;
 
                     link_elem post_ll;
                     post_ll.source_name = insert_seq.name;
-                    post_ll.sink_name = std::to_string(breakpoints[i]);
+                    post_ll.sink_name = std::to_string( breakpoints[i] + 1);
                     post_ll.source_orientation_forward = true;
                     post_ll.sink_orientation_forward = true;
                     post_ll.cigar = "0M";
@@ -328,6 +354,7 @@ int main(int argc, char** argv){
 
             con.push_back(n_start);
             n_start = breakpoints[i];
+            global_max_id = global_max_id > contig_max_id[it->first] ? global_max_id : contig_max_id[it->first];
         }
 
 
@@ -349,15 +376,36 @@ int main(int argc, char** argv){
             else{
             }
         }
- 
+
+
+    }
+
+    for (auto x : name_to_seq){
+        if (contig_to_variants.find(x.first) == contig_to_variants.end()){
+            sequence_elem c_seq;
+            c_seq.name = std::to_string(++global_max_id);
+            c_seq.sequence.assign(x.second);
+            gg.add_sequence(c_seq);
+
+            // label path
+            path_elem pp;
+            pp.name = x.first;
+            pp.rank = 1;
+            pp.source_name = c_seq.name;
+            pp.is_reverse = false;
+            stringstream p_cig;
+            p_cig << c_seq.sequence.length() << "M";
+            pp.cigar = p_cig.str();
+            gg.add_path(pp.source_name, pp);
+        }
+        
+    }
 
     cout << gg;
-    }
 
     for (auto x : name_to_seq){
         delete [] x.second;
     }
-
 
 
     return 0;
