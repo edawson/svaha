@@ -33,6 +33,6 @@ and outputs sorted GFA, which is text-based and easily exchangeable to other, mo
 ## Workflows
 
 1. Build a variation graph with lasso containing structural variants  
-2. Reduce node size with a ``cat result.gfa | vg mod -X 1000 - > new_graph.vg`` to make the resulting graph indexable with GCSA2.  
+2. Reduce node size with a ``cat result.gfa | vg view -F -v - | vg mod -X 1000 - > new_graph.vg`` to make the resulting graph indexable with GCSA2.  
 3. Map reads to that graph using ```vg map``` 
 4. Call variants using ```vg call``` or ```vg genotype```
