@@ -8,7 +8,7 @@ ifdef IS_ICPC
 	CXXFLAGS:= -O3 -std=c++11 -xAVX -qopenmp -funroll-loops -ggdb
 else
 	CXX:=g++
-	CXXFLAGS:= -O3 -std=c++11 -fopenmp -mtune=native -ggdb
+	CXXFLAGS:= -O0 -std=c++11 -fopenmp -mtune=native -ggdb
 endif
 
 LD_INC_FLAGS:= -I./include 
@@ -23,6 +23,9 @@ INC_DIR:=include
 EXE:=lasso
 
 #$(EXE): $(SRC_DIR)/lasso.cpp $(LIB_DIR)/librodeo.a $(OBJ_DIR)/wrangler.o $(SRC_DIR)/vcfparse.hpp .pre-build
+sarhar: $(SRC_DIR)/sarhar.cpp $(SRC_DIR)/vcfparse.hpp $(LIB_DIR)/libhts.a $(LIB_DIR)/libgfakluge.a .pre-build
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LD_LIB_FLAGS) $(LD_INC_FLAGS)
+
 $(EXE): $(SRC_DIR)/lasso.cpp $(SRC_DIR)/vcfparse.hpp $(LIB_DIR)/libhts.a $(LIB_DIR)/libgfakluge.a .pre-build
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LD_LIB_FLAGS) $(LD_INC_FLAGS)
 
