@@ -1,4 +1,5 @@
 #include <iostream>
+#include <set>
 #include <functional>
 #include <algorithm>
 #include <getopt.h>
@@ -70,13 +71,14 @@ int main(int argc, char** argv){
     vector<char*> ref_files;
     vector<string> var_files;
     int threads;
+    int max_node_size = 1000;
 
 
     int c;
     int optind = 2;
 
     if (argc <= 2){
-        cerr << "Usage: " << argv[0] << " -r <REF.fa> -v <VAR.vcf>" << endl;
+        cerr << "Usage: " << argv[0] << " [options] -r <REF.fa> -v <VAR.vcf>" << endl;
         exit(1);
     }
 
@@ -87,11 +89,12 @@ int main(int argc, char** argv){
             {"reference", required_argument, 0, 'r'},
             {"vcf", required_argument, 0, 'v'},
             {"threads", required_argument, 0, 't'},
+            {"max-node-size", required_argument, 0, 'm'},
             {0,0,0,0}
         };
 
         int option_index = 0;
-        c = getopt_long(argc, argv, "hr:v:t:", long_options, &option_index);
+        c = getopt_long(argc, argv, "hr:v:t:m:", long_options, &option_index);
         if (c == -1){
             break;
         }
@@ -105,6 +108,12 @@ int main(int argc, char** argv){
                 break;
             case 'v':
                 var_files.push_back(optarg);
+                break;
+            case 'm':
+                max_node_size = atoi(optarg);
+                break;
+            default:
+                abort();
         }
     }
 
@@ -159,33 +168,6 @@ int main(int argc, char** argv){
         return std::make_pair(front, back);
     };
 
-    std::function<vector<Edge*>(vcfparse::Variant, Node*, Node*)> var_to_edges = [&](vcfparse::Variant var, Node* from, Node* to){
-        if ( !var.info["SVTYPE"].empty() && var.info["SVLEN"].empty()){
-            cerr << "No end info. Skipping sv." << endl;
-            ;
-        }
-
-        vector<Edge*> ret;
-
-        Edge* e_from = new Edge();
-        Edge* e_to = new Edge();
-        if (var.info["SVTYPE"] == "DEL"){
-
-        }
-        else if (var.info["SVTYPE"] == "INS"){
-        }
-        else if (var.info["SVTYPE"] == "DUP"){
-
-        }
-        else if (var.info["SVTYPE"] == "INV"){
-
-        }
-        else{
-
-        }
-        return ret;
-    };
-
     // parse fasta reference files using kseq
     vector<vcfparse::Variant> variants;
     vcfparse::Variant var;
@@ -213,10 +195,6 @@ int main(int argc, char** argv){
                 insertions.push_back(vv);
             }
         }
-    }
-
-    for (auto xx : contig_to_breakpoints){
-        std::sort(xx.second.begin(), xx.second.end());
     }
 
     map<int64_t, Node*> bp_to_node;
@@ -257,6 +235,12 @@ int main(int argc, char** argv){
                 map<int, Node*> bp_to_node;
 
                 // insert breakpoints
+                set<int> s_bps = set<int>(contig_to_breakpoints[contig].begin(), contig_to_breakpoints[contig].end());
+                for (int i = max_node_size; i < clen; i+=max_node_size){
+                    s_bps.insert(i);
+                }
+                contig_to_breakpoints[contig] = vector<int>(s_bps.begin(), s_bps.end());
+                std::sort(contig_to_breakpoints[contig].begin(), contig_to_breakpoints[contig].end());
                 for (int i = 0; i < contig_to_breakpoints[contig].size(); ++i){
 
                     // offset due to inserted sequence
@@ -265,47 +249,54 @@ int main(int argc, char** argv){
                     Node* n = new Node();
                     int brk = contig_to_breakpoints[contig][i]; 
                     n->id = ++c_id;        
+                    //cerr << n-> id << endl;
+                    //cerr << brk << "\t" << c_pos << endl;
                     n->sequence.assign(cseq + c_pos, brk - c_pos);
                     n->path = contig;
-                    n->prev.push_back(contig_nodes.back());
 
-                    // SNPS / insertions are off the ref path
-                    if (contig_nodes.back()->path.empty()){
-                        int prev_ref = contig_nodes.size() - 1;
-                        while (contig_nodes[prev_ref]->path.empty()){
-                           --prev_ref; 
-                        
-                            Edge* secondary_edge = new Edge();
-                            secondary_edge->from = contig_nodes[prev_ref];
-                            secondary_edge->to = n;
-                            contig_edges.push_back(secondary_edge);
+                    if (i > 0){
+                        n->prev.push_back(contig_nodes.back());
+
+
+                        // SNPS / insertions are off the ref path
+                        if (contig_nodes.back()->path.empty()){
+                            int prev_ref = contig_nodes.size() - 1;
+                            while (contig_nodes[prev_ref]->path.empty()){
+                                --prev_ref; 
+
+                                Edge* secondary_edge = new Edge();
+                                secondary_edge->from = contig_nodes[prev_ref];
+                                secondary_edge->to = n;
+                                contig_edges.push_back(secondary_edge);
+                            }
                         }
+
+                        Edge* e = new Edge();
+                        e->from = contig_nodes.back();
+                        e->to = n;
+                        e->is_reverse = false;
+                        contig_edges.push_back(e);
+
+                        (contig_nodes.back())->next.push_back(n);
                     }
-                    
-                    Edge* e = new Edge();
-                    e->from = contig_nodes.back();
-                    e->to = n;
-                    e->is_reverse = false;
-                    contig_edges.push_back(e);
 
-                    (contig_nodes.back())->next.push_back(n);
                     contig_nodes.push_back(n);
-
                     bp_to_node[ contig_to_breakpoints[contig][i] ] = n;
 
                     // Add in extra nodes if needed.
                     vector<vcfparse::Variant> bp_vars = contig_to_breakpoint_to_variants[contig][brk];
                     for (auto bpv : bp_vars){
                         if (bpv.info["SVTYPE"].empty()){
-                            for (auto alt : bpv.alts){
+                            for (int altp = 0; altp < bpv.alts.size(); ++altp){
                                 Node* snp_n = new Node();
-                                snp_n->sequence.assign(alt);
+                                snp_n->sequence = string(bpv.alts[altp]);
+                                //cerr << bpv.alts[altp] << endl;
                                 snp_n->id = ++c_id;
                                 n->next.push_back(snp_n);
                                 contig_nodes.push_back(snp_n);
 
                                 snp_n->prev.push_back(n);
-                                
+
                                 Edge* ie = new Edge();
                                 ie->from = n;
                                 ie->to = snp_n;
@@ -337,7 +328,7 @@ int main(int argc, char** argv){
 
                 // finally, wire up the edges for DEL / INV
                 for (auto vvar : contig_to_variants[contig]){
-                    
+
                     Edge* e_from = new Edge();
                     Edge* e_to = new Edge();
                     if (vvar.info["SVTYPE"] == "DEL"){
@@ -365,11 +356,44 @@ int main(int argc, char** argv){
 
                 }
 
+
                 // Label paths for contig
                 //   and variant ID
 
                 // format GFA and output it.
+                // Delete all our business as we go
+                int prank = 0;
+                for (auto cnode : contig_nodes){
+                    sequence_elem s;
+                    s.sequence = cnode->sequence;
+                    s.name = to_string(cnode->id);
+                    og.add_sequence(s);
+                    if (!cnode->path.empty()){
+                    path_elem p;
+                    p.source_name = s.name;
+                    p.name = cnode->path;
+                    p.is_reverse = false;
+                    p.rank = ++prank;
+                    p.cigar = to_string(s.sequence.length()) + "M";
+                    og.add_path(s.name, p);
+                    }
+                }
+                for (auto cedge : contig_edges){
+                    link_elem l;
+                    l.source_name = to_string(cedge->from->id);
+                    l.sink_name = to_string(cedge->to->id);
+                    l.source_orientation_forward = !cedge->is_reverse;
+                    l.sink_orientation_forward = !cedge->is_reverse;
+                    l.cigar = "";
+                    og.add_link(l.source_name, l);
+                    delete cedge;
+                }
+                for (auto cnode : contig_nodes){
+                    delete cnode;
+                }
+
             }
+            cout << og.to_string();
         }
         gzclose(fp);
 
