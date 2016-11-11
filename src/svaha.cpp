@@ -223,7 +223,7 @@ int main(int argc, char** argv){
             vector<Edge*> contig_edges;
             int curr_id = 0;
             vector<int64_t> ins_nodes;
-            if (contig_to_variants.find(contig) != contig_to_variants.end()){
+            //if (contig_to_variants.find(contig) != contig_to_variants.end()){
 
                 // our current id
                 int c_id = 0;
@@ -392,7 +392,7 @@ int main(int argc, char** argv){
                     delete cnode;
                 }
 
-            }
+            //}
             cout << og.to_string();
         }
         gzclose(fp);
