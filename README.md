@@ -3,9 +3,10 @@ svaha - generate variation graphs for structural variants.
 Make variation graphs from structural variants:  
 [x] Deletions
 [x] Inversions
+[x] Insertions
+[x] SNPs
 [ ] Duplications
 [ ] Transversions
-[x] Insertions
 [ ] Breakpoints
 
 
