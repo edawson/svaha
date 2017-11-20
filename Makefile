@@ -36,7 +36,7 @@ $(LIB_DIR)/libvcflib.a: $(LIB_DIR)/libhts.a .pre-build
 	+cd deps/vcflib && $(MAKE) && cp include/* ../../include/ && cp src/*.hpp ../../include/ && cp libvcflib.a ../../lib/
 
 $(LIB_DIR)/libgfakluge.a: .pre-build
-	+cd deps/gfakluge && $(MAKE) && cp gfakluge.hpp ../../include && cp libgfakluge.a ../../lib/
+	+cd deps/gfakluge && $(MAKE) && cp src/gfakluge.hpp ../../include && cp libgfakluge.a ../../lib/
 
 #$(LIB_DIR)/librodeo.a: $(OBJ_DIR)/rodeo.o $(OBJ_DIR)/wrangler.o .pre-build
 #	ar -rs $@ $^

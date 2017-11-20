@@ -431,23 +431,29 @@ int main(int argc, char** argv){
                 s.name = to_string(cnode->id);
                 og.add_sequence(s);
                 if (!cnode->path.empty()){
-                    path_elem p;
+                    walk_elem p;
                     p.source_name = s.name;
                     p.name = cnode->path;
                     p.is_reverse = false;
                     p.rank = ++prank;
                     p.cigar = to_string(s.sequence.length()) + "M";
-                    og.add_path(s.name, p);
+                    og.add_walk(s.name, p);
                 }
             }
             for (auto cedge : contig_edges){
-                link_elem l;
-                l.source_name = to_string(cedge->from->id);
-                l.sink_name = to_string(cedge->to->id);
-                l.source_orientation_forward = cedge->to_front;
-                l.sink_orientation_forward = cedge->from_back;
-                l.cigar = "0M";
-                og.add_link(l.source_name, l);
+                edge_elem e;
+                e.source_name = to_string(cedge->from->id);
+                e.sink_name = to_string(cedge->to->id);
+                e.source_orientation_forward = cedge->to_front;
+                e.sink_orientation_forward = cedge->from_back;
+                e.type = 1;
+                e.alignment = "0M";
+                e.ends.set(0, 1);
+                e.ends.set(0, 1);
+                e.ends.set(2, 0);
+                e.ends.set(3, 0);
+                og.add_edge(e.source_name, e);
+
                 delete cedge;
             }
             for (auto cnode : contig_nodes){
