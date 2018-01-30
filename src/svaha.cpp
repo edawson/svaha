@@ -81,6 +81,8 @@ int main(int argc, char** argv){
 
     if (argc <= 2){
         cerr << "Usage: " << argv[0] << " [options] -r <REF.fa> -v <VAR.vcf>" << endl;
+        cerr << "Options:" << endl
+            << " -m / --max-node-size  maximum length (in bp) for a node before it gets splits into multiple nodes.." << endl;
         exit(1);
     }
 
@@ -429,6 +431,7 @@ int main(int argc, char** argv){
                 sequence_elem s;
                 s.sequence = cnode->sequence;
                 s.name = to_string(cnode->id);
+                s.length = s.sequence.size();
                 og.add_sequence(s);
                 if (!cnode->path.empty()){
                     walk_elem p;
@@ -461,6 +464,7 @@ int main(int argc, char** argv){
             }
 
             //}
+            og.set_version(2.0);
             cout << og.to_string();
             delete [] bp_to_node;
         }
